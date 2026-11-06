@@ -1,0 +1,176 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로또 6/45 당첨번호</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;padding:30px 16px;
+  background:#101827;color:white;
+  font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+}
+main{max-width:700px;margin:35px auto;text-align:center}
+h1{font-size:30px}
+.sub{color:#94a3b8}
+.panel{
+  background:#1e293b;padding:28px 16px;
+  border-radius:20px;margin-top:25px;
+}
+.round{font-size:26px;color:#fbbf24;font-weight:bold}
+.date{color:#94a3b8;margin-top:10px}
+.balls{
+  display:flex;justify-content:center;
+  flex-wrap:wrap;gap:10px;margin:35px 0;
+}
+.ball{
+  width:53px;height:53px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:bold;font-size:21px;color:#111;
+  box-shadow:inset -3px -4px 7px #0003;
+}
+button{
+  background:#334155;color:white;border:0;
+  padding:13px 18px;border-radius:9px;
+  font-size:15px;cursor:pointer;margin:4px;
+}
+button:disabled{opacity:.35}
+.info{
+  background:#1e293b;padding:20px;
+  border-radius:14px;text-align:left;
+  line-height:2;margin-top:20px;
+}
+.info strong{color:#fbbf24}
+#status{color:#94a3b8;font-size:13px;margin-top:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>🎱 로또 6/45</h1>
+<div class="sub">동행복권 당첨번호 조회 서비스</div>
+
+<section class="panel">
+  <div class="round" id="round">조회 중...</div>
+  <div class="date" id="date">-</div>
+  <div class="balls" id="balls"></div>
+  <div class="sub">보너스 번호</div>
+  <div class="balls" id="bonus"></div>
+
+  <div>
+    <button id="prev" disabled>← 이전 회차</button>
+    <button id="latest">최신 회차</button>
+    <button id="next" disabled>다음 회차 →</button>
+  </div>
+</section>
+
+<div class="info">
+  1등 당첨 게임 수 : <strong id="winner">-</strong><br>
+  1게임당 당첨금 : <strong id="prize">-</strong><br>
+  총 판매금액 : <strong id="sales">-</strong>
+</div>
+<div id="status">동행복권 서버 연결 중...</div>
+</main>
+
+<script>
+let current=0;
+let latest=0;
+let busy=false;
+
+const $=id=>document.getElementById(id);
+
+function money(v){
+  return Number(v||0).toLocaleString("ko-KR")+"원";
+}
+
+function ball(n){
+  const colors=[
+    [10,"#fbc400"],[20,"#69c8f2"],
+    [30,"#ff7272"],[40,"#aaaaaa"],
+    [45,"#b0d840"]
+  ];
+  const color=colors.find(x=>n<=x[0])[1];
+  const el=document.createElement("div");
+  el.className="ball";
+  el.style.background=color;
+  el.textContent=n;
+  return el;
+}
+
+async function api(round){
+  const url=round
+    ?`https://www.dhlottery.co.kr/lt645/selectPstLt645InfoNew.do?srchDir=center&srchLtEpsd=${round}`
+    :"https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do";
+
+  const response=await fetch(url);
+  if(!response.ok)throw Error("서버 응답 오류");
+  const json=await response.json();
+
+  const list=json.data?.list;
+  if(!Array.isArray(list)||!list.length)
+    throw Error("당첨 데이터가 없습니다.");
+
+  return round
+    ?list.find(x=>Number(x.ltEpsd)===round)
+    :list[0];
+}
+
+function show(d){
+  if(!d)throw Error("해당 회차를 찾을 수 없습니다.");
+
+  current=Number(d.ltEpsd);
+  $("round").textContent=current+"회 당첨번호";
+
+  const date=String(d.ltRflYmd||"");
+  $("date").textContent=date.length===8
+    ?`${date.slice(0,4)}년 ${date.slice(4,6)}월 ${date.slice(6)}일`
+    :"추첨일 정보 없음";
+
+  const nums=[];
+  for(let i=1;i<=6;i++)
+    nums.push(Number(d["tm"+i+"WnNo"]));
+
+  $("balls").replaceChildren(...nums.map(ball));
+  $("bonus").replaceChildren(ball(Number(d.bnsWnNo)));
+
+  $("winner").textContent=
+    Number(d.rnk1WnNope||0).toLocaleString()+"게임";
+  $("prize").textContent=money(d.rnk1WnAmt);
+  $("sales").textContent=money(d.wholEpsdSumNtslAmt);
+
+  $("prev").disabled=current<=1;
+  $("next").disabled=current>=latest;
+
+  $("status").textContent="정상 조회 완료 · "+new Date().toLocaleTimeString();
+}
+
+async function load(round){
+  if(busy)return;
+  busy=true;
+  $("status").textContent="당첨번호 조회 중...";
+
+  try{
+    const d=await api(round);
+    show(d);
+    if(!round)latest=current;
+  }catch(e){
+    $("status").textContent=
+      "조회 실패: "+e.message+
+      " (브라우저의 외부 API 연결이 차단되었을 수 있습니다.)";
+  }finally{
+    busy=false;
+  }
+}
+
+$("prev").onclick=()=>load(current-1);
+$("next").onclick=()=>load(current+1);
+$("latest").onclick=()=>load(0);
+
+load(0);
+setInterval(()=>{
+  if(current===latest&&!busy)load(0);
+},60000);
+</script>
+</body>
+</html>
